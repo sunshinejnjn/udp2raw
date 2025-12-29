@@ -54,6 +54,10 @@ For example, if you use udp2raw + OpenVPN, OpenVPN won't lose connection after a
 
 * **Easy to Build** No dependencies.To cross-compile udp2raw,all you need to do is just to download a toolchain,modify makefile to point at the toolchain,run `make cross` then everything is done.(Note:Pre-compiled binaries for Desktop,RaspberryPi,Android,some Openwrt Routers are already included in [Releases](https://github.com/wangyu-/udp2raw-tunnel/releases))
 
+***NEW FEATURE*** **Port Range Support** Both the server and the client can set a port range, so that the server can handle multiple clients from any of the ranged port, and the client can randomly select a port from the range to connect to the server.
+
+***ENHANCED FEATURE*** **More Ciphers** Please refer to the source code for more hash and encryption options.
+
 ### Keywords
 `Bypass UDP QoS` `Bypass UDP Blocking` `Bypass OpenVPN TCP over TCP problem` `OpenVPN over ICMP` `UDP to ICMP tunnel` `UDP to TCP tunnel` `UDP over ICMP` `UDP over TCP`
 
