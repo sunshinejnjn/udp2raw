@@ -131,7 +131,9 @@ void print_help() {
     printf("udp2raw-tunnel\n");
     printf("git version:%s    ", git_version_buf);
     printf("build date:%s %s\n", __DATE__, __TIME__);
-    printf("repository: https://github.com/wangyu-/udp2raw-tunnel\n");
+    printf("all bugs introduced by jnjn @ https://github.com/sunshinejnjn\n");
+    printf("  repository: https://github.com/sunshinejnjn/udp2raw\n");
+    printf("    original forked from: https://github.com/wangyu-/udp2raw-tunnel\n");
     printf("\n");
 #ifdef UDP2RAW_MP
 #ifdef NO_LIBNET
