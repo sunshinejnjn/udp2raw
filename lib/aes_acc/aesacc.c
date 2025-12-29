@@ -265,7 +265,7 @@ static void (*setkey_dec) (uint8_t *rk, const uint8_t *key)
 /*
  * AESNI-CBC buffer encryption/decryption
  */
-static void encrypt_cbc( uint8_t* rk,
+static void encrypt_cbc( uint8_t* rk, int nr,
                          uint32_t length,
                          uint8_t iv[16],
                          const uint8_t *input,
@@ -279,7 +279,7 @@ static void encrypt_cbc( uint8_t* rk,
         for( i = 0; i < 16; i++ )
             output[i] = (uint8_t)( input[i] ^ iv[i] );
 
-        encrypt_ecb( AES_NR, rk, output, output );
+        encrypt_ecb( nr, rk, output, output );
         memcpy( iv, output, 16 );
 
         input  += 16;
@@ -288,7 +288,7 @@ static void encrypt_cbc( uint8_t* rk,
     }
 }
 
-static void decrypt_cbc( uint8_t* rk,
+static void decrypt_cbc( uint8_t* rk, int nr,
                          uint32_t length,
                          uint8_t iv[16],
                          const uint8_t *input,
@@ -300,7 +300,7 @@ static void decrypt_cbc( uint8_t* rk,
     while( length > 0 )
     {
         memcpy( temp, input, 16 );
-        decrypt_ecb( AES_NR, rk, input, output );
+        decrypt_ecb( nr, rk, input, output );
 
         for( i = 0; i < 16; i++ )
             output[i] = (uint8_t)( output[i] ^ iv[i] );
@@ -311,6 +311,53 @@ static void decrypt_cbc( uint8_t* rk,
         output += 16;
         length -= 16;
     }
+}
+
+// ... aeshw_init ... (skipping unchanged parts if possible, but replace_file_content needs contiguous block)
+// I will replace the whole block of functions.
+
+static void encrypt_cfb( uint8_t* rk, int nr,
+                         uint32_t length,size_t *iv_off,
+                         uint8_t iv[16],
+                         const uint8_t *input,
+                         uint8_t *output )
+{
+    int c;
+    size_t n = *iv_off;
+    while( length-- )
+    {
+        if( n == 0 )
+        	encrypt_ecb( nr, rk, iv, iv );
+
+        iv[n] = *output++ = (unsigned char)( iv[n] ^ *input++ );
+
+        n = ( n + 1 ) & 0x0F;
+    }
+
+    *iv_off = n;
+}
+
+static void decrypt_cfb( uint8_t* rk, int nr,
+                         uint32_t length,size_t *iv_off,
+                         uint8_t iv[16],
+                         const uint8_t *input,
+                         uint8_t *output )
+{
+    int c;
+    size_t n = *iv_off;
+    while( length-- )
+    {
+        if( n == 0 )
+        	encrypt_ecb( nr, rk, iv, iv );
+
+        c = *input++;
+        *output++ = (unsigned char)( c ^ iv[n] );
+        iv[n] = (unsigned char) c;
+
+        n = ( n + 1 ) & 0x0F;
+    }
+
+    *iv_off = n;
 }
 
 static void aeshw_init(void)
@@ -348,7 +395,7 @@ void AES_CBC_encrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, co
   memcpy(iv_tmp, iv, 16);
   if(key!= NULL)
 	  setkey_enc(rk, key);
-  encrypt_cbc(rk, length, iv_tmp, input, output);
+  encrypt_cbc(rk, AES_NR, length, iv_tmp, input, output);
 }
 
 void AES_CBC_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
@@ -363,7 +410,7 @@ void AES_CBC_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, co
   {
 	  setkey_dec(rk, key);
   }
-  decrypt_cbc(rk, length, iv_tmp, input, output);
+  decrypt_cbc(rk, AES_NR, length, iv_tmp, input, output);
 }
 
 void AES_ECB_encrypt_buffer(const uint8_t* input, const uint8_t* key, uint8_t* output)
@@ -386,50 +433,6 @@ void AES_ECB_decrypt_buffer(const uint8_t* input, const uint8_t* key, uint8_t *o
   decrypt_ecb(AES_NR, rk, input, output);
 }
 
-static void encrypt_cfb( uint8_t* rk,
-                         uint32_t length,size_t *iv_off,
-                         uint8_t iv[16],
-                         const uint8_t *input,
-                         uint8_t *output )
-{
-    int c;
-    size_t n = *iv_off;
-    while( length-- )
-    {
-        if( n == 0 )
-        	encrypt_ecb( AES_NR, rk, iv, iv );
-
-        iv[n] = *output++ = (unsigned char)( iv[n] ^ *input++ );
-
-        n = ( n + 1 ) & 0x0F;
-    }
-
-    *iv_off = n;
-}
-
-static void decrypt_cfb( uint8_t* rk,
-                         uint32_t length,size_t *iv_off,
-                         uint8_t iv[16],
-                         const uint8_t *input,
-                         uint8_t *output )
-{
-    int c;
-    size_t n = *iv_off;
-    while( length-- )
-    {
-        if( n == 0 )
-        	encrypt_ecb( AES_NR, rk, iv, iv );
-
-        c = *input++;
-        *output++ = (unsigned char)( c ^ iv[n] );
-        iv[n] = (unsigned char) c;
-
-        n = ( n + 1 ) & 0x0F;
-    }
-
-    *iv_off = n;
-}
-
 void AES_CFB_encrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
 {
   uint8_t iv_tmp[16];
@@ -441,7 +444,7 @@ void AES_CFB_encrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, co
   if(key!= NULL)
 	  setkey_enc(rk, key);
   size_t offset=0;
-  encrypt_cfb(rk, length,&offset, iv_tmp, input, output);
+  encrypt_cfb(rk, AES_NR, length,&offset, iv_tmp, input, output);
 }
 
 void AES_CFB_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
@@ -457,6 +460,111 @@ void AES_CFB_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, co
 	  setkey_enc(rk, key);//its enc again,not typo
   }
   size_t offset=0;
-  decrypt_cfb(rk, length,&offset, iv_tmp, input, output);
+
+  decrypt_cfb(rk, AES_NR, length,&offset, iv_tmp, input, output);
 }
 
+static void aes_setkey_enc_256(uint8_t *rk, const uint8_t *key)
+{
+  AES_set_encrypt_key(key, 256, (AES_KEY *) rk);
+}
+
+static void aes_setkey_dec_256(uint8_t *rk, const uint8_t *key)
+{
+  AES_set_decrypt_key(key, 256, (AES_KEY *) rk);
+}
+
+void AES256_CBC_encrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
+{
+  uint8_t iv_tmp[16];
+  static uint8_t rk[AES_RKSIZE];
+
+  assert(iv!=NULL);
+  aeshw_init();
+  memcpy(iv_tmp, iv, 16);
+  if(key!= NULL) {
+      if (aeshw_supported()) {
+#ifdef HAVE_AMD64
+          aesni_setkey_enc_256(rk, key);
+#else
+          // TODO: Add ARM64 256-bit support
+          aes_setkey_enc_256(rk, key); 
+#endif
+      } else {
+          aes_setkey_enc_256(rk, key);
+      }
+  }
+  encrypt_cbc(rk, 14, length, iv_tmp, input, output);
+}
+
+void AES256_CBC_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
+{
+  uint8_t iv_tmp[16];
+  static uint8_t rk[AES_RKSIZE];
+
+  assert(iv!=NULL);
+  aeshw_init();
+  memcpy(iv_tmp, iv, 16);
+  if(key!= NULL) {
+      if (aeshw_supported()) {
+#ifdef HAVE_AMD64
+          uint8_t rk_tmp[AES_RKSIZE];
+          aesni_setkey_enc_256(rk_tmp, key);
+          aesni_inverse_key(rk, rk_tmp, 14);
+#else
+          // TODO: Add ARM64 256-bit support
+          aes_setkey_dec_256(rk, key);
+#endif
+      } else {
+          aes_setkey_dec_256(rk, key);
+      }
+  }
+  decrypt_cbc(rk, 14, length, iv_tmp, input, output);
+}
+
+void AES256_CFB_encrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
+{
+  uint8_t iv_tmp[16];
+  static uint8_t rk[AES_RKSIZE];
+
+  assert(iv!=NULL);
+  aeshw_init();
+  memcpy(iv_tmp, iv, 16);
+  if(key!= NULL) {
+      if (aeshw_supported()) {
+#ifdef HAVE_AMD64
+          aesni_setkey_enc_256(rk, key);
+#else
+          aes_setkey_enc_256(rk, key);
+#endif
+      } else {
+          aes_setkey_enc_256(rk, key);
+      }
+  }
+  size_t offset=0;
+  encrypt_cfb(rk, 14, length,&offset, iv_tmp, input, output);
+}
+
+void AES256_CFB_decrypt_buffer(uint8_t* output, uint8_t* input, uint32_t length, const uint8_t* key, const uint8_t* iv)
+{
+  uint8_t iv_tmp[16];
+  static uint8_t rk[AES_RKSIZE];
+
+  assert(iv!=NULL);
+  aeshw_init();
+  memcpy(iv_tmp, iv, 16);
+  if(key!= NULL)
+  {
+      if (aeshw_supported()) {
+#ifdef HAVE_AMD64
+          aesni_setkey_enc_256(rk, key);
+#else
+          aes_setkey_enc_256(rk, key);
+#endif
+      } else {
+          aes_setkey_enc_256(rk, key);
+      }
+  }
+  size_t offset=0;
+  decrypt_cfb(rk, 14, length,&offset, iv_tmp, input, output);
+}

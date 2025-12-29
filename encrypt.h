@@ -23,12 +23,17 @@ enum auth_mode_t { auth_none = 0,
                    auth_crc32,
                    auth_simple,
                    auth_hmac_sha1,
+                   auth_hmac_sha256,
+                   auth_hmac_md5,
+                   auth_hmac_sha224,
                    auth_end };
 
 enum cipher_mode_t { cipher_none = 0,
                      cipher_aes128cbc,
                      cipher_xor,
                      cipher_aes128cfb,
+                     cipher_aes256cbc,
+                     cipher_aes256cfb,
                      cipher_end };
 
 extern auth_mode_t auth_mode;

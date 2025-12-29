@@ -141,6 +141,13 @@ int client_on_timer(conn_info_t &conn_info)  // for client. called when a timer 
             send_info.src_port = source_port;
         }
 
+        if (remote_port_end != 0) {
+            send_info.dst_port = remote_port_start + get_true_random_number() % (remote_port_end - remote_port_start + 1);
+            mylog(log_info, "using random remote port %d\n", send_info.dst_port);
+        } else {
+             //send_info.dst_port = remote_addr.get_port(); //already set in prepare();
+        }
+
         if (raw_mode == mode_icmp) {
             send_info.dst_port = send_info.src_port;
         }
@@ -321,6 +328,7 @@ int client_on_raw_recv_hs2_or_ready(conn_info_t &conn_info, char type, char *dat
     if (conn_info.state.client_current_state == client_handshake2) {
         mylog(log_info, "changed state from to client_handshake2 to client_ready\n");
         conn_info.state.client_current_state = client_ready;
+        mylog(log_warn, "connection established. remote: %s:%d\n", recv_info.new_src_ip.get_str1(), recv_info.src_port);
         conn_info.last_hb_sent_time = 0;
         conn_info.last_hb_recv_time = get_current_time();
         conn_info.last_oppsite_roller_time = conn_info.last_hb_recv_time;
@@ -803,7 +811,12 @@ int client_event_loop() {
     int ret;
 
     send_info.new_dst_ip.from_address_t(remote_addr);
-    send_info.dst_port = remote_addr.get_port();
+    if (remote_port_end != 0) {
+        send_info.dst_port = remote_port_start + get_true_random_number() % (remote_port_end - remote_port_start + 1);
+        mylog(log_info, "using random remote port %d\n", send_info.dst_port);
+    } else {
+        send_info.dst_port = remote_addr.get_port();
+    }
 
     udp_fd = socket(local_addr.get_type(), SOCK_DGRAM, IPPROTO_UDP);
     set_buf_size(udp_fd, socket_buf_size);

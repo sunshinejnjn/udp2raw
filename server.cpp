@@ -238,6 +238,7 @@ int server_on_raw_recv_pre_ready(conn_info_t &conn_info, char *ip_port, u32_t tm
 
         mylog(log_info, "[%s]changed state to server_ready\n", ip_port);
         conn_info.blob->anti_replay.re_init();
+        mylog(log_warn, "accepted connection from %s\n", ip_port);
 
         // g_conn_info=conn_info;
         int new_timer_fd;

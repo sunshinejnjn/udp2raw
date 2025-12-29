@@ -674,9 +674,35 @@ void init_filter(int port) {
     // code_tcp[8].k=code_tcp[10].k=port;
     if (raw_mode == mode_faketcp) {
         if (raw_ip_version == AF_INET) {
-            bpf.len = sizeof(code_tcp) / sizeof(code_tcp[0]);
-            code_tcp[code_tcp_port_index].k = port;
-            bpf.filter = code_tcp;
+            if (local_port_end != 0) {
+                struct sock_filter code_tcp_range[] = {
+                    {0x30, 0, 0, 0x00000009},  // 0
+                    {0x15, 0, 7, 0x00000006},  // 1 jeq 6 (TCP) jt 2 jf 9 (Reject)
+                    {0x28, 0, 0, 0x00000006},  // 2
+                    {0x45, 5, 0, 0x00001fff},  // 3 jset frag jt 9 (Reject) jf 4
+                    {0xb1, 0, 0, 0x00000000},  // 4
+                    {0x48, 0, 0, 0x00000002},  // 5
+                    {0x35, 0, 2, (u32_t)local_port_start},  // 6 JGE start(jt 7 jf 9)
+                    {0x25, 1, 0, (u32_t)local_port_end},    // 7 JGT end (jt 9 jf 8)
+                    {0x6, 0, 0, 0x0000ffff},   // 8 Accept
+                    {0x6, 0, 0, 0x00000000},   // 9 Reject
+                };
+                bpf.len = sizeof(code_tcp_range) / sizeof(code_tcp_range[0]);
+                bpf.filter = code_tcp_range;
+                
+                //Must check return value of setsockopt, otherwise the code above will use stack memory which is invalid after return
+                int ret = setsockopt(raw_recv_fd, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+                if (ret != 0) {
+                    mylog(log_fatal, "error set fiter\n");
+                    myexit(-1);
+                }
+                return;
+
+            } else {
+                bpf.len = sizeof(code_tcp) / sizeof(code_tcp[0]);
+                code_tcp[code_tcp_port_index].k = port;
+                bpf.filter = code_tcp;
+            }
         } else {
             bpf.len = sizeof(code_tcp6) / sizeof(code_tcp6[0]);
             code_tcp6[code_tcp6_port_index].k = port;
@@ -684,9 +710,33 @@ void init_filter(int port) {
         }
     } else if (raw_mode == mode_udp) {
         if (raw_ip_version == AF_INET) {
-            bpf.len = sizeof(code_udp) / sizeof(code_udp[0]);
-            code_udp[code_udp_port_index].k = port;
-            bpf.filter = code_udp;
+             if (local_port_end != 0) {
+                struct sock_filter code_udp_range[] = {
+                    {0x30, 0, 0, 0x00000009},
+                    {0x15, 0, 7, 0x00000011}, // 1 jeq 17 (UDP) jt 2 jf 9
+                    {0x28, 0, 0, 0x00000006}, // 2
+                    {0x45, 5, 0, 0x00001fff}, // 3 jset frag jt 9 jf 4
+                    {0xb1, 0, 0, 0x00000000}, // 4
+                    {0x48, 0, 0, 0x00000002}, // 5
+                    {0x35, 0, 2, (u32_t)local_port_start}, // 6 JGE start (jt 7 jf 9)
+                    {0x25, 1, 0, (u32_t)local_port_end},   // 7 JGT end (jt 9 jf 8)
+                    {0x6, 0, 0, 0x0000ffff},  // 8
+                    {0x6, 0, 0, 0x00000000},  // 9
+                };
+                bpf.len = sizeof(code_udp_range) / sizeof(code_udp_range[0]);
+                bpf.filter = code_udp_range;
+
+                int ret = setsockopt(raw_recv_fd, SOL_SOCKET, SO_ATTACH_FILTER, &bpf, sizeof(bpf));
+                if (ret != 0) {
+                    mylog(log_fatal, "error set fiter\n");
+                    myexit(-1);
+                }
+                return;
+             } else {
+                bpf.len = sizeof(code_udp) / sizeof(code_udp[0]);
+                code_udp[code_udp_port_index].k = port;
+                bpf.filter = code_udp;
+             }
         } else {
             bpf.len = sizeof(code_udp6) / sizeof(code_udp6[0]);
             code_udp6[code_udp6_port_index].k = port;
@@ -1473,6 +1523,11 @@ int peek_raw(raw_info_t &raw_info) {
                 return -1;
             }
             recv_info.src_port = ntohs(tcph->source);
+             recv_info.dst_port = ntohs(tcph->dest);
+            if (local_port_end != 0 && (recv_info.dst_port < local_port_start || recv_info.dst_port > local_port_end)) {
+                 mylog(log_trace, "port %d out of range %d-%d\n", recv_info.dst_port, local_port_start, local_port_end);
+                 return -1;
+            }
             recv_info.syn = tcph->syn;
             break;
         }
@@ -1482,6 +1537,11 @@ int peek_raw(raw_info_t &raw_info) {
             if (payload_len < int(sizeof(my_udphdr)))
                 return -1;
             recv_info.src_port = ntohs(udph->source);
+            recv_info.dst_port = ntohs(udph->dest);
+             if (local_port_end != 0 && (recv_info.dst_port < local_port_start || recv_info.dst_port > local_port_end)) {
+                 mylog(log_trace, "port %d out of range %d-%d\n", recv_info.dst_port, local_port_start, local_port_end);
+                 return -1;
+            }
             break;
         }
         case mode_icmp: {
@@ -1495,6 +1555,11 @@ int peek_raw(raw_info_t &raw_info) {
             if (payload_len < int(sizeof(my_udphdr)))
                 return -1;
             recv_info.src_port = ntohs(icmph->id);
+            recv_info.dst_port = ntohs(icmph->id);
+             if (local_port_end != 0 && (recv_info.dst_port < local_port_start || recv_info.dst_port > local_port_end)) {
+                 mylog(log_trace, "port %d out of range %d-%d\n", recv_info.dst_port, local_port_start, local_port_end);
+                 return -1;
+            }
             break;
         }
         default:
@@ -2043,9 +2108,15 @@ int recv_raw_udp(raw_info_t &raw_info, char *&payload, int &payloadlen) {
         return -1;
     }
 
-    if (udph->dest != ntohs(uint16_t(filter_port))) {
-        // printf("%x %x",tcph->dest,);
-        return -1;
+    if (local_port_end != 0) {
+        if (ntohs(udph->dest) < local_port_start || ntohs(udph->dest) > local_port_end) {
+            return -1;
+        }
+    } else {
+        if (udph->dest != ntohs(uint16_t(filter_port))) {
+            // printf("%x %x",tcph->dest,);
+            return -1;
+        }
     }
 
     // memcpy(recv_raw_udp_buf+ sizeof(struct pseudo_header) , ip_payload , ip_payloadlen);
@@ -2196,9 +2267,15 @@ int recv_raw_tcp(raw_info_t &raw_info, char *&payload, int &payloadlen) {
         return 0;
     }
 
-    if (tcph->dest != ntohs(uint16_t(filter_port))) {
-        // printf("%x %x",tcph->dest,);
-        return -1;
+    if (local_port_end != 0) {
+        if (ntohs(tcph->dest) < local_port_start || ntohs(tcph->dest) > local_port_end) {
+            return -1;
+        }
+    } else {
+        if (tcph->dest != ntohs(uint16_t(filter_port))) {
+            // printf("%x %x",tcph->dest,);
+            return -1;
+        }
     }
 
     // memcpy(recv_raw_tcp_buf+ sizeof(struct pseudo_header) , ip_payload , ip_payloadlen);

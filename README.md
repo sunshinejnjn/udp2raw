@@ -70,6 +70,11 @@ Assume your UDP is blocked or being QOS-ed or just poorly supported. Assume your
 
 # Run at client side
 ./udp2raw_amd64 -c -l0.0.0.0:3333  -r44.55.66.77:4096  -k "passwd" --raw-mode faketcp -a
+
+# Multi-port support:
+# You can also use a port range (e.g., 2000-3000) for -l or -r.
+# Server: -l 0.0.0.0:2000-3000  (Listen on ports 2000 to 3000)
+# Client: -r 44.55.66.77:2000-3000 (Randomly select a destination port from 2000 to 3000)
 ```
 (The above commands need to be run as root. For better security, with some extra steps, you can run udp2raw as non-root. Check [this link](https://github.com/wangyu-/udp2raw-tunnel/wiki/run-udp2raw-as-non-root) for more info  )
 

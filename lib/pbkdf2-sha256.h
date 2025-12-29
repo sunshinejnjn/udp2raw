@@ -11,6 +11,10 @@ void PKCS5_PBKDF2_HMAC_SHA256(unsigned char *password, size_t plen,
 
 //void sha2( const unsigned char *input, size_t ilen,unsigned char output[32], int is224 );
 
+void sha2_hmac( const unsigned char *key, size_t keylen,
+                const unsigned char *input, size_t ilen,
+                unsigned char output[32], int is224 );
+
 int hkdf_sha256_extract(
                           const unsigned char *salt, size_t salt_len,
                           const unsigned char *ikm, size_t ikm_len,

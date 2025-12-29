@@ -89,6 +89,8 @@ union current_state_t {
 // extern int local_port , remote_port,source_port;//similiar to local_ip  remote_ip,buf for port.source_port=0 indicates --source-port is not enabled
 
 extern address_t local_addr, remote_addr, source_addr;
+extern int remote_port_start;
+extern int remote_port_end;
 
 extern my_ip_t bind_addr;
 
@@ -96,6 +98,9 @@ extern int bind_addr_used;
 extern int force_source_ip;  // if --source-ip is enabled
 extern int force_source_port;
 extern int source_port;
+
+extern int local_port_start;
+extern int local_port_end;
 
 extern my_id_t const_id;  // an id used for connection recovery,its generated randomly,it never change since its generated
 

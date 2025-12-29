@@ -42,6 +42,12 @@ int bind_addr_used = 0;
 int force_source_ip = 0;  // if --source-ip is enabled
 int force_source_port = 0;
 
+int local_port_start = 0;
+int local_port_end = 0;
+
+int remote_port_start = 0;
+int remote_port_end = 0;
+
 my_id_t const_id = 0;  // an id used for connection recovery,its generated randomly,it never change since its generated
 
 int udp_fd = -1;   // for client only. client use this fd to listen and handle udp connection
@@ -136,12 +142,17 @@ void print_help() {
     printf("usage:\n");
     printf("    run as client : ./this_program -c -l local_listen_ip:local_port -r server_address:server_port  [options]\n");
     printf("    run as server : ./this_program -s -l server_listen_ip:server_port -r remote_address:remote_port  [options]\n");
+    printf("    \n");
+    printf("    You can use port range in -l and -r options. format: start_port-end_port\n");
+    printf("    Example: -l 0.0.0.0:10000-20000 -r 1.2.3.4:100-200\n");
     printf("\n");
     printf("common options,these options must be same on both side:\n");
     printf("    --raw-mode            <string>        available values:faketcp(default),udp,icmp and easy-faketcp\n");
     printf("    -k,--key              <string>        password to gen symetric key,default:\"secret key\"\n");
     printf("    --cipher-mode         <string>        available values:aes128cfb,aes128cbc(default),xor,none\n");
+    printf("                                          aes256cfb,aes256cbc\n");
     printf("    --auth-mode           <string>        available values:hmac_sha1,md5(default),crc32,simple,none\n");
+    printf("                                          hmac_sha256,hmac_sha224,hmac_md5\n");
     printf("    -a,--auto-rule                        auto add (and delete) iptables rule\n");
     printf("    -g,--gen-rule                         generate iptables rule then exit,so that you can copy and\n");
     printf("                                          add it manually.overrides -a\n");
@@ -381,43 +392,53 @@ void process_arg(int argc, char *argv[])  // process all options
         switch (opt) {
             case 'l':
                 no_l = 0;
-                local_addr.from_str(optarg);
+                if (strchr(optarg, '-') != 0) {
+                    char buf[100];
+                    strncpy(buf, optarg, 99);
+                    buf[99] = 0;
+                    char *mid = strchr(buf, '-');
+                    *mid = 0;
+                    local_addr.from_str(buf);
+                    sscanf(mid + 1, "%d", &local_port_end);
+                    local_port_start = local_addr.get_port();
+                    if (local_port_start > local_port_end) {
+                        mylog(log_fatal, "invalid range for -l : %d-%d\n", local_port_start, local_port_end);
+                        myexit(-1);
+                    }
+                    mylog(log_info, "port range enabled: %d-%d\n", local_port_start, local_port_end);
+                } else {
+                    local_addr.from_str(optarg);
+                }
+
                 if (local_addr.get_port() == 22) {
                     mylog(log_fatal, "port 22 not allowed\n");
                     myexit(-1);
                 }
-                /*
-                if (strchr(optarg, ':') != 0) {
-                        sscanf(optarg, "%[^:]:%d", local_ip, &local_port);
-                        if(local_port==22)
-                        {
-                                mylog(log_fatal,"port 22 not allowed\n");
-                                myexit(-1);
-                        }
-                } else {
-                        mylog(log_fatal,"invalid parameter for -l ,%s,should be ip:port\n",optarg);
-                        myexit(-1);
-                }*/
                 break;
             case 'r':
                 no_r = 0;
-                remote_addr.from_str(optarg);
+                if (strchr(optarg, '-') != 0) {
+                    char buf[100];
+                    strncpy(buf, optarg, 99);
+                    buf[99] = 0;
+                    char *mid = strchr(buf, '-');
+                    *mid = 0;
+                    remote_addr.from_str(buf);
+                    sscanf(mid + 1, "%d", &remote_port_end);
+                    remote_port_start = remote_addr.get_port();
+                    if (remote_port_start > remote_port_end) {
+                        mylog(log_fatal, "invalid range for -r : %d-%d\n", remote_port_start, remote_port_end);
+                        myexit(-1);
+                    }
+                    mylog(log_info, "remote port range enabled: %d-%d\n", remote_port_start, remote_port_end);
+                } else {
+                    remote_addr.from_str(optarg);
+                }
+                
                 if (remote_addr.get_port() == 22) {
                     mylog(log_fatal, "port 22 not allowed\n");
                     myexit(-1);
                 }
-                /*
-                if (strchr(optarg, ':') != 0) {
-                        sscanf(optarg, "%[^:]:%d", remote_address, &remote_port);
-                        if(remote_port==22)
-                        {
-                                mylog(log_fatal,"port 22 not allowed\n");
-                                myexit(-1);
-                        }
-                } else {
-                        mylog(log_fatal,"invalid parameter for -r ,%s,should be ip:port\n",optarg);
-                        myexit(-1);
-                }*/
                 break;
             case 's':
                 if (program_mode == 0) {
@@ -867,10 +888,16 @@ void iptables_rule()  // handles -a -g --gen-add  --keep-rule --clear --wait-loc
     if (program_mode == client_mode) {
         tmp_pattern[0] = 0;
         if (raw_mode == mode_faketcp) {
-            sprintf(tmp_pattern, "-s %s -p tcp -m tcp --sport %d", remote_addr.get_ip(), remote_addr.get_port());
+            if (remote_port_end != 0)
+                sprintf(tmp_pattern, "-s %s -p tcp -m tcp --sport %d:%d", remote_addr.get_ip(), remote_port_start, remote_port_end);
+            else
+                sprintf(tmp_pattern, "-s %s -p tcp -m tcp --sport %d", remote_addr.get_ip(), remote_addr.get_port());
         }
         if (raw_mode == mode_udp) {
-            sprintf(tmp_pattern, "-s %s -p udp -m udp --sport %d", remote_addr.get_ip(), remote_addr.get_port());
+            if (remote_port_end != 0)
+                sprintf(tmp_pattern, "-s %s -p udp -m udp --sport %d:%d", remote_addr.get_ip(), remote_port_start, remote_port_end);
+            else
+                sprintf(tmp_pattern, "-s %s -p udp -m udp --sport %d", remote_addr.get_ip(), remote_addr.get_port());
         }
         if (raw_mode == mode_icmp) {
             if (raw_ip_version == AF_INET)
@@ -896,10 +923,16 @@ void iptables_rule()  // handles -a -g --gen-add  --keep-rule --clear --wait-loc
 
         tmp_pattern[0] = 0;
         if (raw_mode == mode_faketcp) {
-            sprintf(tmp_pattern, "-p tcp -m tcp --dport %d", local_addr.get_port());
+            if (local_port_end != 0)
+                sprintf(tmp_pattern, "-p tcp -m tcp --dport %d:%d", local_port_start, local_port_end);
+            else
+                sprintf(tmp_pattern, "-p tcp -m tcp --dport %d", local_addr.get_port());
         }
         if (raw_mode == mode_udp) {
-            sprintf(tmp_pattern, "-p udp -m udp --dport %d", local_addr.get_port());
+            if (local_port_end != 0)
+                sprintf(tmp_pattern, "-p udp -m udp --dport %d:%d", local_port_start, local_port_end);
+            else
+                sprintf(tmp_pattern, "-p udp -m udp --dport %d", local_addr.get_port());
         }
         if (raw_mode == mode_icmp) {
             if (raw_ip_version == AF_INET)
@@ -1010,6 +1043,72 @@ int unit_test() {
     for (int i = 0; i < temp_len; i++) {
         printf("<%d>", buf4[i]);
     }
+    printf("\n");
+
+    // Test AES256
+    printf("Testing AES256-CBC...\n");
+    char key256[100] = "12345678123456781234567812345678"; // 32 bytes
+    cipher_mode = cipher_aes256cbc;
+    cipher_encrypt(buf, buf2, len, key256);
+    cipher_decrypt(buf2, buf3, len, key256);
+    if (memcmp(buf, buf3, len) == 0) printf("AES256-CBC Passed\n");
+    else printf("AES256-CBC Failed\n");
+
+    printf("Testing AES256-CFB...\n");
+    cipher_mode = cipher_aes256cfb;
+    cipher_encrypt(buf, buf2, len, key256);
+    cipher_decrypt(buf2, buf3, len, key256);
+    if (memcmp(buf, buf3, len) == 0) printf("AES256-CFB Passed\n");
+    else printf("AES256-CFB Failed\n");
+
+    printf("Testing HMAC-SHA256...\n");
+    auth_mode = auth_hmac_sha256;
+    
+    // Client encrypts
+    my_init_keys("secret", 1); 
+    len = 16; 
+    my_encrypt(buf, buf2, len);
+    
+    // Server decrypts
+    my_init_keys("secret", 0);
+    
+    if(my_decrypt(buf2, buf3, len) == 0 && memcmp(buf, buf3, 16) == 0)
+        printf("HMAC-SHA256 Passed\n");
+    else
+        printf("HMAC-SHA256 Failed\n");
+
+    printf("Testing HMAC-MD5...\n");
+    auth_mode = auth_hmac_md5;
+    
+    // Client encrypts
+    my_init_keys("secret", 1); 
+    len = 16; 
+    my_encrypt(buf, buf2, len);
+    
+    // Server decrypts
+    my_init_keys("secret", 0);
+    
+    if(my_decrypt(buf2, buf3, len) == 0 && memcmp(buf, buf3, 16) == 0)
+        printf("HMAC-MD5 Passed\n");
+    else
+        printf("HMAC-MD5 Failed\n");
+
+    printf("Testing HMAC-SHA224...\n");
+    auth_mode = auth_hmac_sha224;
+    
+    // Client encrypts
+    my_init_keys("secret", 1); 
+    len = 16; 
+    my_encrypt(buf, buf2, len);
+    
+    // Server decrypts
+    my_init_keys("secret", 0);
+    
+    if(my_decrypt(buf2, buf3, len) == 0 && memcmp(buf, buf3, 16) == 0)
+        printf("HMAC-SHA224 Passed\n");
+    else
+        printf("HMAC-SHA224 Failed\n");
+
     return 0;
 }
 

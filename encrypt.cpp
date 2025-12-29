@@ -34,6 +34,9 @@ unordered_map<int, const char *> auth_mode_tostring = {
     {auth_crc32, "crc32"},
     {auth_simple, "simple"},
     {auth_hmac_sha1, "hmac_sha1"},
+    {auth_hmac_sha256, "hmac_sha256"},
+    {auth_hmac_md5, "hmac_md5"},
+    {auth_hmac_sha224, "hmac_sha224"},
 };
 
 unordered_map<int, const char *> cipher_mode_tostring = {
@@ -41,6 +44,8 @@ unordered_map<int, const char *> cipher_mode_tostring = {
     {cipher_aes128cfb, "aes128cfb"},
     {cipher_aes128cbc, "aes128cbc"},
     {cipher_xor, "xor"},
+    {cipher_aes256cfb, "aes256cfb"},
+    {cipher_aes256cbc, "aes256cbc"},
 };
 // TODO aes-gcm
 
@@ -62,7 +67,7 @@ int my_init_keys(const char *user_passwd, int is_client) {
 
     md5((uint8_t *)tmp, strlen(tmp), (uint8_t *)normal_key);
 
-    if (auth_mode == auth_hmac_sha1)
+    if (auth_mode == auth_hmac_sha1 || auth_mode == auth_hmac_sha256 || auth_mode == auth_hmac_md5 || auth_mode == auth_hmac_sha224)
         is_hmac_used = 1;
     if (is_hmac_used || g_fix_gro || 1) {
         unsigned char salt[400] = "";
@@ -195,6 +200,84 @@ int auth_hmac_sha1_verify(const char *data, int &len) {
         return -2;
     }
     len -= 20;
+    return 0;
+}
+
+int auth_hmac_sha256_cal(const char *data, char *output, int &len) {
+    mylog(log_trace, "auth_hmac_sha256_cal() is called\n");
+    memcpy(output, data, len);  // TODO inefficient code
+    sha2_hmac(hmac_key_encrypt, 32, (const unsigned char *)data, len, (unsigned char *)(output + len), 0);
+    len += 32;
+    return 0;
+}
+
+int auth_hmac_sha256_verify(const char *data, int &len) {
+    mylog(log_trace, "auth_hmac_sha256_verify() is called\n");
+    if (len < 32) {
+        mylog(log_trace, "auth_hmac_sha256_verify len<32\n");
+        return -1;
+    }
+    char res[32];
+
+    sha2_hmac(hmac_key_decrypt, 32, (const unsigned char *)data, len - 32, (unsigned char *)(res), 0);
+
+    if (memcmp(res, data + len - 32, 32) != 0) {
+        mylog(log_trace, "auth_hmac_sha256 check failed\n");
+        return -2;
+    }
+    len -= 32;
+    return 0;
+}
+
+int auth_hmac_md5_cal(const char *data, char *output, int &len) {
+    mylog(log_trace, "auth_hmac_md5_cal() is called\n");
+    memcpy(output, data, len);  // TODO inefficient code
+    md5_hmac(hmac_key_encrypt, 16, (const unsigned char *)data, len, (unsigned char *)(output + len));
+    len += 16;
+    return 0;
+}
+
+int auth_hmac_md5_verify(const char *data, int &len) {
+    mylog(log_trace, "auth_hmac_md5_verify() is called\n");
+    if (len < 16) {
+        mylog(log_trace, "auth_hmac_md5_verify len<16\n");
+        return -1;
+    }
+    char res[16];
+
+    md5_hmac(hmac_key_decrypt, 16, (const unsigned char *)data, len - 16, (unsigned char *)(res));
+
+    if (memcmp(res, data + len - 16, 16) != 0) {
+        mylog(log_trace, "auth_hmac_md5 check failed\n");
+        return -2;
+    }
+    len -= 16;
+    return 0;
+}
+
+int auth_hmac_sha224_cal(const char *data, char *output, int &len) {
+    mylog(log_trace, "auth_hmac_sha224_cal() is called\n");
+    memcpy(output, data, len);  // TODO inefficient code
+    sha2_hmac(hmac_key_encrypt, 28, (const unsigned char *)data, len, (unsigned char *)(output + len), 1);
+    len += 28;
+    return 0;
+}
+
+int auth_hmac_sha224_verify(const char *data, int &len) {
+    mylog(log_trace, "auth_hmac_sha224_verify() is called\n");
+    if (len < 28) {
+        mylog(log_trace, "auth_hmac_sha224_verify len<28\n");
+        return -1;
+    }
+    char res[28];
+
+    sha2_hmac(hmac_key_decrypt, 28, (const unsigned char *)data, len - 28, (unsigned char *)(res), 1);
+
+    if (memcmp(res, data + len - 28, 28) != 0) {
+        mylog(log_trace, "auth_hmac_sha224 check failed\n");
+        return -2;
+    }
+    len -= 28;
     return 0;
 }
 
@@ -413,6 +496,78 @@ int cipher_aes128cfb_decrypt(const char *data, char *output, int &len, char *key
     return 0;
 }
 
+int cipher_aes256cbc_encrypt(const char *data, char *output, int &len, char *key) {
+    static int first_time = 1;
+
+    char buf[buf_len];
+    memcpy(buf, data, len);  // TODO inefficient code
+
+    if (padding(buf, len, 16) < 0) return -1;
+
+    if (aes_key_optimize) {
+        if (first_time == 0)
+            key = 0;
+        else
+            first_time = 0;
+    }
+
+    AES256_CBC_encrypt_buffer((unsigned char *)output, (unsigned char *)buf, len, (unsigned char *)key, (unsigned char *)zero_iv);
+    return 0;
+}
+int cipher_aes256cfb_encrypt(const char *data, char *output, int &len, char *key) {
+    static int first_time = 1;
+    assert(len >= 16);
+
+    char buf[buf_len];
+    memcpy(buf, data, len);  // TODO inefficient code
+    if (aes_key_optimize) {
+        if (first_time == 0)
+            key = 0;
+        else
+            first_time = 0;
+    }
+    if (!aes128cfb_old) {
+        aes_ecb_encrypt(data, buf);  // encrypt the first block
+    }
+
+    AES256_CFB_encrypt_buffer((unsigned char *)output, (unsigned char *)buf, len, (unsigned char *)key, (unsigned char *)zero_iv);
+    return 0;
+}
+int cipher_aes256cbc_decrypt(const char *data, char *output, int &len, char *key) {
+    static int first_time = 1;
+    if (len % 16 != 0) {
+        mylog(log_debug, "len%%16!=0\n");
+        return -1;
+    }
+    if (aes_key_optimize) {
+        if (first_time == 0)
+            key = 0;
+        else
+            first_time = 0;
+    }
+    AES256_CBC_decrypt_buffer((unsigned char *)output, (unsigned char *)data, len, (unsigned char *)key, (unsigned char *)zero_iv);
+    if (de_padding(output, len, 16) < 0) return -1;
+    return 0;
+}
+int cipher_aes256cfb_decrypt(const char *data, char *output, int &len, char *key) {
+    static int first_time = 1;
+    if (len < 16) return -1;
+
+    if (aes_key_optimize) {
+        if (first_time == 0)
+            key = 0;
+        else
+            first_time = 0;
+    }
+
+    AES256_CFB_decrypt_buffer((unsigned char *)output, (unsigned char *)data, len, (unsigned char *)key, (unsigned char *)zero_iv);
+
+    if (!aes128cfb_old)
+        aes_ecb_decrypt1(output);  // decrypt the first block
+    // if(de_padding(output,len,16)<0) return -1;
+    return 0;
+}
+
 int cipher_none_decrypt(const char *data, char *output, int &len, char *key) {
     memcpy(output, data, len);
     return 0;
@@ -431,6 +586,12 @@ int auth_cal(const char *data, char *output, int &len) {
             return auth_none_cal(data, output, len);
         case auth_hmac_sha1:
             return auth_hmac_sha1_cal(data, output, len);
+        case auth_hmac_sha256:
+            return auth_hmac_sha256_cal(data, output, len);
+        case auth_hmac_md5:
+            return auth_hmac_md5_cal(data, output, len);
+        case auth_hmac_sha224:
+            return auth_hmac_sha224_cal(data, output, len);
         // default:	return auth_md5_cal(data,output,len);//default;
         default:
             assert(0 == 1);
@@ -450,6 +611,12 @@ int auth_verify(const char *data, int &len) {
             return auth_none_verify(data, len);
         case auth_hmac_sha1:
             return auth_hmac_sha1_verify(data, len);
+        case auth_hmac_sha256:
+            return auth_hmac_sha256_verify(data, len);
+        case auth_hmac_md5:
+            return auth_hmac_md5_verify(data, len);
+        case auth_hmac_sha224:
+            return auth_hmac_sha224_verify(data, len);
         // default:	return auth_md5_verify(data,len);//default
         default:
             assert(0 == 1);
@@ -463,6 +630,10 @@ int cipher_encrypt(const char *data, char *output, int &len, char *key) {
             return cipher_aes128cbc_encrypt(data, output, len, key);
         case cipher_aes128cfb:
             return cipher_aes128cfb_encrypt(data, output, len, key);
+        case cipher_aes256cbc:
+            return cipher_aes256cbc_encrypt(data, output, len, key);
+        case cipher_aes256cfb:
+            return cipher_aes256cfb_encrypt(data, output, len, key);
         case cipher_xor:
             return cipher_xor_encrypt(data, output, len, key);
         case cipher_none:
@@ -480,6 +651,10 @@ int cipher_decrypt(const char *data, char *output, int &len, char *key) {
             return cipher_aes128cbc_decrypt(data, output, len, key);
         case cipher_aes128cfb:
             return cipher_aes128cfb_decrypt(data, output, len, key);
+        case cipher_aes256cbc:
+            return cipher_aes256cbc_decrypt(data, output, len, key);
+        case cipher_aes256cfb:
+            return cipher_aes256cfb_decrypt(data, output, len, key);
         case cipher_xor:
             return cipher_xor_decrypt(data, output, len, key);
         case cipher_none:
