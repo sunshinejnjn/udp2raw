@@ -69,6 +69,9 @@ int generate_iptables_rule_add = 0;  // if --gen-add is set
 int retry_on_error = 0;
 
 int debug_resend = 0;  // debug only
+int resend_num = 0;
+int resend_auto = 0;
+
 
 char key_string[1000] = "secret key";  // -k option
 
@@ -204,6 +207,7 @@ void print_help() {
     printf("    --mtu-warn            <number>        mtu warning threshold, unit:byte, default:1375\n");
     printf("    --clear                               clear any iptables rules added by this program.overrides everything\n");
     printf("    --retry-on-error                      retry on error, allow to start udp2raw before network is initialized\n");
+    printf("    --resend              <number>        packet resend times (0-4) or 'auto' for time-based resend\n");
     printf("    -h,--help                             print this help message\n");
     // printf("common options,these options must be same on both side\n");
 }
@@ -267,7 +271,9 @@ void process_arg(int argc, char *argv[])  // process all options
     static struct option long_options[] =
         {
             /* These options set a flag. */
+            {"resend", required_argument, 0, 1},
             {"source-ip", required_argument, 0, 1},
+
             {"source-port", required_argument, 0, 1},
             {"log-level", required_argument, 0, 1},
             {"key", required_argument, 0, 'k'},
@@ -591,6 +597,19 @@ void process_arg(int argc, char *argv[])  // process all options
                         myexit(-1);
                     }
                     generate_iptables_rule_add = 1;
+                } else if (strcmp(long_options[option_index].name, "resend") == 0) {
+                    if (strcmp(optarg, "auto") == 0) {
+                        resend_auto = 1;
+                        resend_num = 1;  // default resend 1 time in auto mode
+                        mylog(log_info, "resend=auto enabled\n");
+                    } else {
+                        sscanf(optarg, "%d", &resend_num);
+                        if (resend_num < 0 || resend_num > 4) {
+                            mylog(log_fatal, "resend value must be between 0 and 4, or 'auto'\n");
+                            myexit(-1);
+                        }
+                        mylog(log_info, "resend=%d\n", resend_num);
+                    }
                 } else if (strcmp(long_options[option_index].name, "disable-color") == 0) {
                     // enable_log_color=0;
                 } else if (strcmp(long_options[option_index].name, "enable-color") == 0) {

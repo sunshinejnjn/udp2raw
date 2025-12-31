@@ -121,6 +121,9 @@ extern int retry_on_error;
 const int retry_on_error_interval = 10;
 
 extern int debug_resend;  // debug only
+extern int resend_num;
+extern int resend_auto;
+
 
 extern char key_string[1000];  // -k option
 extern char fifo_file[1000];

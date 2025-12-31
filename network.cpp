@@ -1145,6 +1145,34 @@ int send_raw_packet(raw_info_t &raw_info, const char *packet, int len) {
         return -1;
     } else {
         // mylog(log_info,"sendto succ\n");
+        int duplication_count = resend_num;
+        if (duplication_count > 0 && resend_auto) {
+            time_t t = time(NULL);
+            struct tm *tm = gmtime(&t);
+            if (tm->tm_hour >= 10 && tm->tm_hour <= 17) {
+            } else {
+                duplication_count = 0;
+            }
+        }
+        for (int i = 0; i < duplication_count; i++) {
+            if (lower_level == 0) {
+                if (raw_ip_version == AF_INET) {
+                    struct sockaddr_in sin = {0};
+                    sin.sin_family = raw_ip_version;
+                    sin.sin_addr.s_addr = send_info.new_dst_ip.v4;
+                    sendto(raw_send_fd, packet, len, 0, (struct sockaddr *)&sin, sizeof(sin));
+                } else if (raw_ip_version == AF_INET6) {
+                    struct sockaddr_in6 sin = {0};
+                    sin.sin6_family = raw_ip_version;
+                    sin.sin6_addr = send_info.new_dst_ip.v6;
+                    sendto(raw_send_fd, packet, len, 0, (struct sockaddr *)&sin, sizeof(sin));
+                }
+            } else {
+                struct sockaddr_ll addr = {0};
+                memcpy(&addr, &send_info.addr_ll, sizeof(addr));
+                sendto(raw_send_fd, packet, len, 0, (struct sockaddr *)&addr, sizeof(addr));
+            }
+        }
     }
     return 0;
 }
