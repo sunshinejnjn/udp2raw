@@ -1,5 +1,5 @@
 # Udp2raw-tunnel
-# Enhanced by jnjn, refer to "ENHANCED" features for more information, 2025.12.31
+# Enhanced by jnjn, refer to *ENHANCED FEATURES* for more information, 2025.12.31
 
 
 A Tunnel which turns UDP Traffic into Encrypted FakeTCP/UDP/ICMP Traffic by using Raw Socket, helps you Bypass UDP FireWalls(or Unstable UDP Environment).
