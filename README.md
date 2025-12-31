@@ -62,6 +62,8 @@ For example, if you use udp2raw + OpenVPN, OpenVPN won't lose connection after a
 
 ***LINK COMPENSATION*** Resend to deal with link packet loss.
 
+***DNS RESOLUTION*** Hostnames can be used in the `-r` option. The client will resolve the hostname on start and re-resolve it on every reconnection, ensuring the connection points to the latest IP address. This is enabled by default. Use `--disable-dns-resolve` to disable it.
+
 ### Keywords
 `Bypass UDP QoS` `Bypass UDP Blocking` `Bypass OpenVPN TCP over TCP problem` `OpenVPN over ICMP` `UDP to ICMP tunnel` `UDP to TCP tunnel` `UDP over ICMP` `UDP over TCP`
 
@@ -121,6 +123,7 @@ common options,these options must be same on both side:
     --disable-anti-replay                 disable anti-replay,not suggested
     --fix-gro                             try to fix huge packet caused by GRO. this option is at an early stage.
                                           make sure client and server are at same version.
+    --disable-dns-resolve                 disable DNS resolution (enabled by default)
 client options:
     --source-ip           <ip>            force source-ip for raw socket
     --source-port         <port>          force source-port for raw socket,tcp/udp only

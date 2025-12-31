@@ -127,6 +127,7 @@ extern int resend_auto;
 
 extern char key_string[1000];  // -k option
 extern char fifo_file[1000];
+extern char remote_address_string[1000];
 
 extern raw_mode_t raw_mode;
 extern u32_t raw_ip_version;

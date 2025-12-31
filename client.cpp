@@ -147,6 +147,43 @@ int client_on_timer(conn_info_t &conn_info)  // for client. called when a timer 
         } else {
              //send_info.dst_port = remote_addr.get_port(); //already set in prepare();
         }
+        
+        if(enable_dns_resolve) {
+            mylog(log_info, "dns resolving...\n");
+            // If remote_address_string contains a port range, we probably shouldn't re-resolve it blindly
+            // as from_str might not handle range syntax.
+            // However, the original code parses range first then calls from_str on address only if no range.
+            // But we stored the whole optarg in remote_address_string.
+            // If it was a range, remote_address_string has "-".
+            // If we are here, we might need to be careful.
+            
+            // Actually, `remote_addr` is global.
+            // If we re-resolve, we should safeguard against parsing errors or ranges if from_str doesn't handle them.
+            // But `address_t::from_str` handles "ip:port" or "[ip]:port".
+            // If manual parsing in misc.cpp handled range, `remote_addr` was set to start of range.
+            
+            // Let's assume for now simple case of single address if we want to support full re-resolution including port.
+            // OR we just re-resolve the IP part? `address_t::from_str` does everything.
+            
+            // To be safe, let's only do it if no port range was used (remote_port_end == 0)
+            // Or if we can parse it from the stored string properly.
+            
+            if(remote_port_end == 0 && strlen(remote_address_string) > 0)
+            {
+                 address_t tmp_remote_addr;
+                 if(tmp_remote_addr.from_str(remote_address_string) == 0)
+                 {
+                     remote_addr = tmp_remote_addr;
+                     send_info.new_dst_ip.from_address_t(remote_addr);
+                     send_info.dst_port = remote_addr.get_port();
+                     // mylog(log_info, "dns resolve successful, new ip: %s\n", remote_addr.get_ip());
+                 }
+                 else
+                 {
+                     mylog(log_warn, "dns resolve failed for %s\n", remote_address_string);
+                 }
+            }
+        }
 
         if (raw_mode == mode_icmp) {
             send_info.dst_port = send_info.src_port;

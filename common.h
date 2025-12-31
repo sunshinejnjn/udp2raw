@@ -26,6 +26,7 @@
 #include <stdarg.h>
 #include <assert.h>
 #include <pthread.h>
+#include <netdb.h>
 
 #ifndef USE_LIBNET
 #define NO_LIBNET
@@ -224,6 +225,8 @@ struct address_t  // TODO scope id
     int from_str(char *str);
 
     int from_str_ip_only(char *str);
+
+    int resolv_domain(char *domain, int &type, void *ip);
 
     int from_sockaddr(sockaddr *, socklen_t);
 

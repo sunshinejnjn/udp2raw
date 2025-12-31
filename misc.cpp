@@ -22,7 +22,7 @@ int max_rst_to_show = 15;
 
 int max_rst_allowed = -1;
 
-int enable_dns_resolve = 0;
+int enable_dns_resolve = 1;
 
 int ttl_value = 64;
 
@@ -76,6 +76,7 @@ int resend_auto = 0;
 char key_string[1000] = "secret key";  // -k option
 
 char fifo_file[1000] = "";
+char remote_address_string[1000] = "";
 
 int clear_iptables = 0;
 int wait_xtables_lock = 0;
@@ -134,8 +135,7 @@ void print_help() {
     printf("udp2raw-tunnel\n");
     printf("git version:%s    ", git_version_buf);
     printf("build date:%s %s\n", __DATE__, __TIME__);
-    printf("all bugs introduced by jnjn @ https://github.com/sunshinejnjn\n");
-    printf("  repository: https://github.com/sunshinejnjn/udp2raw\n");
+    printf("all bugs introduced by jnjn @ https://github.com/sunshinejnjn/udp2raw\n");
     printf("    original forked from: https://github.com/wangyu-/udp2raw-tunnel\n");
     printf("\n");
 #ifdef UDP2RAW_MP
@@ -315,6 +315,7 @@ void process_arg(int argc, char *argv[])  // process all options
             {"no-pcap-mutex", no_argument, 0, 1},
 #endif
             {"fix-gro", no_argument, 0, 1},
+            {"disable-dns-resolve", no_argument, 0, 1},
             {NULL, 0, 0, 0}};
 
     process_log_level(argc, argv);
@@ -442,6 +443,7 @@ void process_arg(int argc, char *argv[])  // process all options
                 } else {
                     remote_addr.from_str(optarg);
                 }
+                strncpy(remote_address_string, optarg, 999);
                 
                 if (remote_addr.get_port() == 22) {
                     mylog(log_fatal, "port 22 not allowed\n");
@@ -719,6 +721,9 @@ void process_arg(int argc, char *argv[])  // process all options
                 } else if (strcmp(long_options[option_index].name, "fix-gro") == 0) {
                     mylog(log_info, "--fix-gro enabled\n");
                     g_fix_gro = 1;
+                } else if (strcmp(long_options[option_index].name, "disable-dns-resolve") == 0) {
+                     mylog(log_info, "dns-resolve disabled\n");
+                     enable_dns_resolve = 0;
                 } else {
                     mylog(log_warn, "ignored unknown long option ,option_index:%d code:<%x>\n", option_index, optopt);
                 }

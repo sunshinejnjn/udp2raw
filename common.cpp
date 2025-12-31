@@ -15,6 +15,51 @@
 // static int random_number_fd=-1;
 int force_socket_buf = 0;
 
+int address_t::resolv_domain(char *domain, int &type, void *ip) {
+    struct addrinfo hints, *res;
+    int err;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;
+
+    if ((err = getaddrinfo(domain, NULL, &hints, &res)) != 0) {
+        // mylog(log_error, "error in getaddrinfo: %s\n", gai_strerror(err));
+        return -1;
+    }
+    
+    // Attempt to match the requested IP version if specified in global config
+    // otherwise just take the first one
+    struct addrinfo *p;
+    int found = 0;
+    
+    // First pass: try to find a match for the preferred IP version if set
+    // This logic relies on extern int raw_ip_version from network.h/misc.h but 
+    // common.cpp might not have visibility easily without more includes.
+    // For now, we'll iterate and try to pick based on standard behavior or just first valid.
+    
+    for (p = res; p != NULL; p = p->ai_next) {
+        if (p->ai_family == AF_INET) {
+            struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+            type = AF_INET;
+            memcpy(ip, &(ipv4->sin_addr), sizeof(struct in_addr));
+            found = 1;
+            break;
+        } else if (p->ai_family == AF_INET6) {
+            struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+            type = AF_INET6;
+            memcpy(ip, &(ipv6->sin6_addr), sizeof(struct in6_addr));
+            found = 1;
+            break;
+        }
+    }
+
+    freeaddrinfo(res);
+    
+    if (found) return 0;
+    return -1;
+}
+
 int address_t::from_str(char *str) {
     clear();
 
@@ -27,7 +72,7 @@ int address_t::from_str(char *str) {
         inner.ipv6.sin6_family = AF_INET6;
         is_ipv6 = 1;
     } else if (sscanf(str, "%[^:]:%u", ip_addr_str, &port) == 2) {
-        mylog(log_info, "its an ipv4 adress\n");
+        // mylog(log_info, "its an ipv4 adress\n");
         inner.ipv4.sin_family = AF_INET;
     } else {
         mylog(log_error, "failed to parse\n");
@@ -61,8 +106,28 @@ int address_t::from_str(char *str) {
         inner.ipv4.sin_port = htons(port);
 
         if (ret == 0) {
-            mylog(log_error, "ip_addr %s is not an ipv4 address, %d\n", ip_addr_str, ret);
-            myexit(-1);
+            // It's not a valid IP string, try DNS resolution
+            int type = 0;
+            char ip_buf[16]; // Sufficient for IPv6 (16 bytes)
+            
+            if (resolv_domain(ip_addr_str, type, ip_buf) == 0) {
+                 if (type == AF_INET) {
+                     inner.ipv4.sin_family = AF_INET;
+                     inner.ipv4.sin_port = htons(port);
+                     memcpy(&(inner.ipv4.sin_addr), ip_buf, sizeof(struct in_addr));
+                     mylog(log_info, "hostname %s resolved to %s\n", ip_addr_str, get_ip());
+                 } else {
+                     // Handle IPv6 resolution if logic permits, currently sticking to struct structure
+                      inner.ipv6.sin6_family = AF_INET6;
+                      inner.ipv6.sin6_port = htons(port);
+                      memcpy(&(inner.ipv6.sin6_addr), ip_buf, sizeof(struct in6_addr));
+                       mylog(log_info, "hostname %s resolved to %s\n", ip_addr_str, get_ip());
+                 }
+            } else {
+                mylog(log_error, "ip_addr %s is not an ipv4 address, and dns resolve failed\n", ip_addr_str);
+                myexit(-1);
+            }
+
         } else if (ret == 1) {
             // okay
         } else {
