@@ -614,8 +614,14 @@ u32_t get_true_random_number() {
 u32_t get_true_random_number_nz()  // nz for non-zero
 {
     u32_t ret = 0;
+    int cnt = 0;
     while (ret == 0) {
         ret = get_true_random_number();
+        if (cnt > 10) {
+            usleep(10000);  // 10ms
+            if (cnt % 1000 == 0) mylog(log_info, "random number is 0, retrying... cnt=%d\n", cnt);
+        }
+        cnt++;
     }
     return ret;
 }
